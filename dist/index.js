@@ -15,15 +15,32 @@ const ecdsa_validator_1 = require("@zerodev/ecdsa-validator");
 const viem_1 = require("viem");
 const accounts_1 = require("viem/accounts");
 const chains_1 = require("viem/chains");
-const PROJECT_ID = '49e58f7f-c1ec-4ccb-ad44-0d3a0b806bfe';
+const PROJECT_ID = '';
 const BUNDLER_RPC = `https://rpc.zerodev.app/api/v2/bundler/${PROJECT_ID}`;
 // const PAYMASTER_RPC = `https://rpc.zerodev.app/api/v2/paymaster/${PROJECT_ID}`
 const chain = chains_1.polygon;
 const entryPoint = (0, constants_1.getEntryPoint)("0.7");
 const kernelVersion = constants_1.KERNEL_V3_1;
-function main() {
+const addressSmartAccount = '0x0123456789012345678901234567890123456789';
+const privateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const abiEncodeWithSelector = (selector, abiTypes, args) => {
+    const encodedArgs = (0, viem_1.encodeAbiParameters)(abiTypes, args);
+    return `0x${selector + encodedArgs.slice(2)}`;
+};
+function getInstallModuleCallData(moduleAddress) {
+    const installModuleSelector = "9517e29f";
+    const abiTypes = [
+        { name: 'moduleType', type: 'uint' },
+        { name: 'module', type: 'address' },
+        { name: 'initData', type: 'bytes' }
+    ];
+    const initDataKernel = "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000c6578656375746f724461746100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    const args = [BigInt(2), moduleAddress, initDataKernel];
+    const encodedData = abiEncodeWithSelector(installModuleSelector, abiTypes, args);
+    return encodedData;
+}
+function getClient() {
     return __awaiter(this, void 0, void 0, function* () {
-        const privateKey = '0x9af9740f589c55da5d642602b1c1f6791f064639c013249239a5e4011fdecc13';
         const signer = (0, accounts_1.privateKeyToAccount)(privateKey);
         const RPC_URL = "https://polygon.rpc.subquery.network/public";
         // Construct a public client
@@ -38,7 +55,7 @@ function main() {
             kernelVersion
         });
         const account = yield (0, sdk_1.createKernelAccount)(publicClient, {
-            address: "0x320A88Af954ACbDA0faC3D9198060E9f296a5b25",
+            address: addressSmartAccount, // add this field, if account already exists
             plugins: {
                 sudo: ecdsaValidator,
             },
@@ -60,20 +77,27 @@ function main() {
         });
         const accountAddress = kernelClient.account.address;
         console.log("My account:", accountAddress);
-        const userOpHash = yield kernelClient.sendUserOperation({
-            callData: yield kernelClient.account.encodeCalls([{
-                    to: "0x53d759e049aCe12323ba223453AEDa2f5B766B73",
+        return kernelClient;
+    });
+}
+function installModuleDitto() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const client = yield getClient();
+        const addressModule = "";
+        const userOpHash = yield client.sendUserOperation({
+            callData: yield client.account.encodeCalls([{
+                    to: addressSmartAccount,
                     value: BigInt(0),
-                    data: "0xe2ac6af800000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000174876e800000000000000000000000000000000000000000000000000000000000007a12000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000120000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000044095ea7b300000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc4500000000000000000000000000000000000000000000000000000000009896800000000000000000000000000000000000000000000000000000000000000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc450000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf127000000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000320a88af954acbda0fac3d9198060e9f296a5b2500000000000000000000000000000000000000000000000000000000009896800000000000000000000000000000000000000000000000012e7a868f01d7f13f000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                    data: getInstallModuleCallData(addressModule),
                 }]),
         });
         console.log("UserOp hash:", userOpHash);
         console.log("Waiting for UserOp to complete...");
-        yield kernelClient.waitForUserOperationReceipt({
+        yield client.waitForUserOperationReceipt({
             hash: userOpHash,
             timeout: 1000 * 15,
         });
         console.log("View completed UserOp here: https://jiffyscan.xyz/userOpHash/" + userOpHash);
     });
 }
-main();
+installModuleDitto();
