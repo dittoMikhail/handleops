@@ -15,6 +15,10 @@ const ecdsa_validator_1 = require("@zerodev/ecdsa-validator");
 const viem_1 = require("viem");
 const accounts_1 = require("viem/accounts");
 const chains_1 = require("viem/chains");
+const callDataOnRouter_1 = require("./helpers/callDataOnRouter");
+const callDataForApprove_1 = require("./helpers/callDataForApprove");
+const callDataInstallModule_1 = require("./helpers/callDataInstallModule");
+const callDataAddWorkflow_1 = require("./helpers/callDataAddWorkflow");
 const PROJECT_ID = '';
 const BUNDLER_RPC = `https://rpc.zerodev.app/api/v2/bundler/${PROJECT_ID}`;
 // const PAYMASTER_RPC = `https://rpc.zerodev.app/api/v2/paymaster/${PROJECT_ID}`
@@ -23,22 +27,6 @@ const entryPoint = (0, constants_1.getEntryPoint)("0.7");
 const kernelVersion = constants_1.KERNEL_V3_1;
 const addressSmartAccount = '0x0123456789012345678901234567890123456789';
 const privateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-const abiEncodeWithSelector = (selector, abiTypes, args) => {
-    const encodedArgs = (0, viem_1.encodeAbiParameters)(abiTypes, args);
-    return `0x${selector + encodedArgs.slice(2)}`;
-};
-function getInstallModuleCallData(moduleAddress) {
-    const installModuleSelector = "9517e29f";
-    const abiTypes = [
-        { name: 'moduleType', type: 'uint' },
-        { name: 'module', type: 'address' },
-        { name: 'initData', type: 'bytes' }
-    ];
-    const initDataKernel = "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000c6578656375746f724461746100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-    const args = [BigInt(2), moduleAddress, initDataKernel];
-    const encodedData = abiEncodeWithSelector(installModuleSelector, abiTypes, args);
-    return encodedData;
-}
 function getClient() {
     return __awaiter(this, void 0, void 0, function* () {
         const signer = (0, accounts_1.privateKeyToAccount)(privateKey);
@@ -88,7 +76,7 @@ function installModuleDitto() {
             callData: yield client.account.encodeCalls([{
                     to: addressSmartAccount,
                     value: BigInt(0),
-                    data: getInstallModuleCallData(addressModule),
+                    data: (0, callDataInstallModule_1.getInstallModuleCallData)(addressModule),
                 }]),
         });
         console.log("UserOp hash:", userOpHash);
@@ -100,4 +88,48 @@ function installModuleDitto() {
         console.log("View completed UserOp here: https://jiffyscan.xyz/userOpHash/" + userOpHash);
     });
 }
-installModuleDitto();
+function limitOrder() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const client = yield getClient();
+        const uniswapRouter = "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45";
+        const tokenIn = "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619";
+        const tokenOut = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+        const poolFee = 500;
+        const recipient = addressSmartAccount;
+        const amountIn = BigInt(500000000000000000);
+        const amountOut = BigInt(500000000);
+        const callDataApprove = (0, callDataForApprove_1.getApproveCalldata)(uniswapRouter, amountIn);
+        const callDataOnRouter = (0, callDataOnRouter_1.getExactInputSingleCalldata)(tokenIn, tokenOut, poolFee, recipient, amountIn, amountOut, BigInt(0));
+        const initsArray = [];
+        const actionsArray = [
+            {
+                target: tokenIn,
+                value: BigInt(0),
+                callData: callDataApprove
+            },
+            {
+                target: uniswapRouter,
+                value: BigInt(0),
+                callData: callDataOnRouter
+            },
+        ];
+        const maxGasPrice = BigInt(100000000000); //100 gwei
+        const maxGasLimit = BigInt(500000); // 500_000
+        const count = BigInt(1);
+        const addWorkflowCallData = (0, callDataAddWorkflow_1.getAddWorkflowCallData)(initsArray, actionsArray, maxGasPrice, maxGasLimit, count);
+        const userOpHash = yield client.sendUserOperation({
+            callData: yield client.account.encodeCalls([{
+                    to: addressSmartAccount,
+                    value: BigInt(0),
+                    data: addWorkflowCallData,
+                }]),
+        });
+        console.log("UserOp hash:", userOpHash);
+        console.log("Waiting for UserOp to complete...");
+        yield client.waitForUserOperationReceipt({
+            hash: userOpHash,
+            timeout: 1000 * 15,
+        });
+        console.log("View completed UserOp here: https://jiffyscan.xyz/userOpHash/" + userOpHash);
+    });
+}
